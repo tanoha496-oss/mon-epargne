@@ -34,6 +34,7 @@ ul{list-style:none;padding:0;margin:8px 0 0}
 li{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--bd);gap:8px}
 li:last-child{border:0}
 .pos{color:var(--ac);font-weight:600}
+.neg{color:var(--rd);font-weight:600}
 .x{background:none;color:var(--mu);flex:none;padding:4px 8px}
 .tot{display:flex;justify-content:space-between;margin-top:10px;font-weight:700}
 input.chk{width:22px;height:22px;flex:none;margin:0}
@@ -41,6 +42,7 @@ input.chk{width:22px;height:22px;flex:none;margin:0}
 label.row{cursor:pointer}
 .ok{color:var(--ac);font-size:.9rem;margin-top:4px}
 .ko{color:var(--rd);font-size:.9rem;margin-top:4px}
+.util{margin-top:16px;padding-top:12px;border-top:2px dashed var(--bd)}
 #msg{color:var(--rd);font-size:.9rem;min-height:1.2em}
 select{width:100%;box-sizing:border-box;padding:11px;margin:5px 0;border:1px solid var(--bd);border-radius:10px;background:var(--bg);color:var(--tx);font-size:1rem}
 .sep{display:flex;align-items:center;gap:10px;margin:22px 0 14px;color:var(--mu);font-size:.8rem}
@@ -105,9 +107,9 @@ var DEF=[
  {id:"besoins",nom:"Coffre besoins",pct:45,solde:0,c:"#f59e0b",titre:"Liste des besoins",ph:"Nom du besoin (ex : cahier)"},
  {id:"envies",nom:"Coffre envies",pct:25,solde:0,c:"#a855f7",titre:"Liste des envies",ph:"Nom de l’envie (ex : chaussures)"},
  {id:"epargne",nom:"Coffre épargne",pct:30,solde:0,c:"#0f9d6b"}];
-var S={coffres:JSON.parse(JSON.stringify(DEF)),ops:[],devise:"FCFA",jours:{},listes:{besoins:[],envies:[]}};
+var S={coffres:JSON.parse(JSON.stringify(DEF)),ops:[],devise:"FCFA",jours:{},listes:{besoins:[],envies:[]},util:{besoins:[],envies:[]}};
 var ouvert=null,alerte="";
-function load(){try{var d=localStorage.getItem("mon-epargne-v3");if(d)S=Object.assign(S,JSON.parse(d));S.coffres.forEach(function(c,i){c.pct=DEF[i].pct;c.titre=DEF[i].titre;c.ph=DEF[i].ph;});}catch(e){}}
+function load(){try{var d=localStorage.getItem("mon-epargne-v3");if(d)S=Object.assign(S,JSON.parse(d));S.coffres.forEach(function(c,i){c.pct=DEF[i].pct;c.titre=DEF[i].titre;c.ph=DEF[i].ph;});if(!S.util)S.util={};if(!S.util.besoins)S.util.besoins=[];if(!S.util.envies)S.util.envies=[];}catch(e){}}
 function save(){try{localStorage.setItem("mon-epargne-v3",JSON.stringify(S));}catch(e){}}
 function fmt(n){return n.toLocaleString("fr-FR",{maximumFractionDigits:2})+" "+S.devise;}
 function $(i){return document.getElementById(i);}
@@ -131,6 +133,15 @@ function corps(c){
     h+='<div class="tot"><span>Prix total de la liste</span><span>'+fmt(totalListe(id))+'</span></div><div class="row mu" style="justify-content:space-between"><span>Déjà satisfait</span><span>'+fmt(totalListe(id)-tot)+'</span></div><div class="row mu" style="justify-content:space-between"><span>Reste à satisfaire</span><span>'+fmt(tot)+'</span></div>';
     h+=diff>=0?'<div class="ok">Ton coffre couvre cette liste ✅ (il restera '+fmt(diff)+')</div>':'<div class="ko">Il te manque '+fmt(-diff)+' pour tout acheter</div>';
   }
+  var us=(S.util&&S.util[id])||[];
+  h+='<div class="util"><strong>Utiliser le solde du coffre</strong><div class="mu">Saisis le montant que tu as dépensé : il est retiré du coffre et du total.</div>';
+  h+='<input id="um-'+id+'" type="number" inputmode="decimal" min="0" placeholder="Montant dépensé"><input id="un-'+id+'" type="text" placeholder="Pour quoi ? (facultatif)">';
+  h+='<div class="row"><button class="use" data-id="'+id+'" style="background:var(--rd)">− Utiliser</button></div><ul>';
+  if(!us.length)h+='<li class="mu">Aucune utilisation pour le moment.</li>';
+  us.slice().reverse().forEach(function(u){
+    h+='<li><div><div>'+(u.n?esc(u.n):'Utilisation')+'</div><div class="mu">'+u.d+'</div></div><span class="row"><span class="neg">−'+fmt(u.m)+'</span><button class="x undo" data-id="'+id+'" data-item="'+u.id+'" title="Annuler cette utilisation">↩</button></span></li>';
+  });
+  h+='</ul></div>';
   return h+'</div>';
 }
 
@@ -239,6 +250,20 @@ $("coffres").onclick=function(e){
   } else if(b.classList.contains("del")){
     var iid=parseInt(b.getAttribute("data-item"),10);
     S.listes[id]=S.listes[id].filter(function(i){return i.id!==iid;});save();render();
+  } else if(b.classList.contains("use")){
+    var um=parseFloat($("um-"+id).value),cu=byId(id),nu=$("un-"+id).value.trim();
+    if(!(um>0)){alerte="Entre le montant dépensé.";render();return;}
+    if(um>cu.solde){alerte="Solde insuffisant dans le "+cu.nom.toLowerCase()+" (il reste "+fmt(cu.solde)+").";render();return;}
+    alerte="";
+    cu.solde=Math.round((cu.solde-um)*100)/100;
+    if(!S.util[id])S.util[id]=[];
+    S.util[id].push({id:Date.now(),m:um,n:nu,d:new Date().toLocaleDateString("fr-FR")});
+    save();render();
+  } else if(b.classList.contains("undo")){
+    var uid=parseInt(b.getAttribute("data-item"),10),cr=byId(id);
+    (S.util[id]||[]).forEach(function(u){if(u.id===uid)cr.solde=Math.round((cr.solde+u.m)*100)/100;});
+    S.util[id]=(S.util[id]||[]).filter(function(u){return u.id!==uid;});
+    alerte="";save();render();
   }
 };
 
@@ -263,7 +288,7 @@ $("reset").onclick=function(){
     return;
   }
   clearTimeout(rzTimer);b.removeAttribute("data-conf");b.textContent="↺ Remise à 0";
-  S.coffres.forEach(function(c){c.solde=0;});S.ops=[];editId=null;
+  S.coffres.forEach(function(c){c.solde=0;});S.ops=[];S.util={besoins:[],envies:[]};editId=null;
   save();render();
 };
 function majSel(){

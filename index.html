@@ -65,6 +65,14 @@ select{width:100%;box-sizing:border-box;padding:11px;margin:5px 0;border:1px sol
 <main>
 <div class="entete"><h1>💰 Mon épargne</h1><button id="sauv">💾 Sauvegarder</button></div>
 <div class="mu" id="sauvinfo" style="text-align:right;margin:-8px 0 12px"></div>
+<div class="row" style="justify-content:flex-end;margin:0 0 6px"><button id="pub" style="flex:none;padding:8px 12px;font-size:.9rem">📤 Publier</button><button id="ghset" title="Réglages GitHub" style="flex:none;padding:8px 12px;font-size:.9rem;background:var(--mu)">⚙</button></div>
+<div id="pubmsg" class="mu" style="text-align:right;min-height:1.2em;margin:0 0 12px"></div>
+<div id="ghpanel" class="card" style="display:none"><strong>Connexion à GitHub (une seule fois)</strong>
+<input id="gh-u" type="text" placeholder="Ton pseudo GitHub"><input id="gh-r" type="text" placeholder="Nom du dépôt (celui de Mon épargne)"><input id="gh-t" type="password" placeholder="Jeton d’accès (github_pat_...)">
+<div class="row"><button id="gh-ok">Enregistrer</button><button id="gh-no" style="background:var(--mu)">Fermer</button></div>
+<div class="mu" style="margin-top:6px">Le jeton reste sur ton téléphone et n’est envoyé qu’à GitHub.</div>
+<div class="sep">✦</div>
+<button id="part" style="background:var(--mu);width:100%">📤 Exporter pour partager</button><div class="mu" style="margin-top:6px">Secours : télécharge data.json si tu préfères l’envoyer toi-même.</div></div>
 <div class="cols"><div>
 
 <div class="card">
@@ -168,7 +176,7 @@ function renderCal(){
   else if(jourSel)h+='<div class="mu" style="margin-top:6px">Aucun dépôt ce jour-là.</div>';
   $("cal").innerHTML=h;
 }
-var editId=null;
+var editId=null,editSolde=null;
 function modifier(o,nm){
   var old=o.m,np=[],reste=nm;
   o.parts.forEach(function(p,i){
@@ -186,8 +194,8 @@ function render(){
   S.coffres.forEach(function(c){
     var liste=!!S.listes[c.id];
     h+='<div class="card coffre" style="border-left-color:'+c.c+'"><div class="head'+(liste?' clic" data-toggle="'+c.id:'')+'">';
-    h+='<div class="top"><strong>'+c.nom+'</strong><span class="pct" style="background:'+c.c+'">'+c.pct+' %</span></div>';
-    h+='<span class="montant">'+fmt(c.solde)+'</span>';
+    h+='<div class="top"><span class="row"><strong>'+c.nom+'</strong>'+(liste?'<button class="x edsolde" data-id="'+c.id+'" title="Modifier le solde">✎</button>':'')+'</span><span class="pct" style="background:'+c.c+'">'+c.pct+' %</span></div>';
+    if(editSolde===c.id)h+='<div class="edit-solde"><input id="es-'+c.id+'" type="number" inputmode="decimal" min="0" value="'+c.solde+'"><div class="row"><button class="essave" data-id="'+c.id+'">✔ Valider</button><button class="esno" data-id="'+c.id+'" style="background:var(--mu)">Annuler</button></div></div>';else h+='<span class="montant">'+fmt(c.solde)+'</span>';
     if(liste)h+='<div class="mu">Prix total de la liste : <b>'+fmt(totalListe(c.id))+'</b> · reste '+fmt(resteListe(c.id))+'</div>';
     if(liste)h+='<div class="mu">'+(ouvert===c.id?'▴ Masquer la liste':'▾ Touche pour voir la liste')+'</div>';
     h+='</div>';
@@ -225,6 +233,10 @@ function render(){
 
 $("coffres").onclick=function(e){
   var b=e.target,hd=b.closest?b.closest(".head"):null;
+  if(b.closest&&b.closest(".edit-solde")&&!b.classList.contains("essave")&&!b.classList.contains("esno"))return;
+  if(b.classList.contains("edsolde")){editSolde=b.getAttribute("data-id");render();return;}
+  if(b.classList.contains("esno")){editSolde=null;render();return;}
+  if(b.classList.contains("essave")){var sid=b.getAttribute("data-id"),sv=parseFloat($("es-"+sid).value);if(!(sv>=0))return;byId(sid).solde=Math.round(sv*100)/100;editSolde=null;save();render();return;}
   if(hd&&hd.getAttribute("data-toggle")){
     var t=hd.getAttribute("data-toggle");ouvert=(ouvert===t?null:t);alerte="";render();return;
   }
@@ -336,6 +348,44 @@ $("cal").onclick=function(e){
     if(S.jours[jr])delete S.jours[jr];else S.jours[jr]="fait";
     save();renderCal();
   }
+};
+$("part").onclick=function(){
+  var b=this,d={maj:new Date().toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}),devise:S.devise,coffres:S.coffres.map(function(c){return {id:c.id,nom:c.nom,pct:c.pct,solde:c.solde,c:c.c};}),listes:S.listes,util:S.util,ops:S.ops.slice(-10).map(function(o){return {m:o.m,d:o.d};})};
+  var t=JSON.stringify(d,null,1);
+  try{var a=document.createElement("a");a.href=URL.createObjectURL(new Blob([t],{type:"application/json"}));a.download="data.json";document.body.appendChild(a);a.click();a.remove();}catch(e){}
+  try{navigator.clipboard.writeText(t);}catch(e){}
+  b.textContent="✅ data.json prêt";setTimeout(function(){b.textContent="📤 Exporter pour partager";},2500);
+};
+function jsonPartage(){
+  var d={maj:new Date().toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}),devise:S.devise,coffres:S.coffres.map(function(c){return {id:c.id,nom:c.nom,pct:c.pct,solde:c.solde,c:c.c};}),listes:S.listes,util:S.util,ops:S.ops.slice(-10).map(function(o){return {m:o.m,d:o.d};})};
+  return JSON.stringify(d,null,1);
+}
+function ghCfg(){try{return JSON.parse(localStorage.getItem("mon-epargne-gh")||"{}");}catch(e){return {};}}
+function ghOuvrir(){var g=ghCfg();$("gh-u").value=g.u||"";$("gh-r").value=g.r||"";$("gh-t").value=g.t||"";$("ghpanel").style.display="block";}
+$("ghset").onclick=function(){if($("ghpanel").style.display==="block")$("ghpanel").style.display="none";else ghOuvrir();};
+$("gh-no").onclick=function(){$("ghpanel").style.display="none";};
+$("gh-ok").onclick=function(){
+  var g={u:$("gh-u").value.trim(),r:$("gh-r").value.trim(),t:$("gh-t").value.trim()};
+  try{localStorage.setItem("mon-epargne-gh",JSON.stringify(g));}catch(e){}
+  $("ghpanel").style.display="none";$("pubmsg").textContent="Réglages enregistrés. Touche « Publier ».";
+};
+$("pub").onclick=function(){
+  var g=ghCfg(),b=this,m=$("pubmsg");
+  if(!g.u||!g.r||!g.t){ghOuvrir();m.textContent="Renseigne d’abord ces 3 informations (une seule fois).";return;}
+  var url="https://api.github.com/repos/"+g.u+"/"+g.r+"/contents/data.json",H={"Authorization":"Bearer "+g.t,"Accept":"application/vnd.github+json"};
+  b.textContent="⏳ Envoi…";m.textContent="";
+  fetch(url,{headers:H}).then(function(r){return r.status===404?null:r.json();}).then(function(f){
+    var body={message:"Mise à jour de l’épargne",content:btoa(unescape(encodeURIComponent(jsonPartage())))};
+    if(f&&f.sha)body.sha=f.sha;
+    return fetch(url,{method:"PUT",headers:H,body:JSON.stringify(body)});
+  }).then(function(r){
+    if(!r.ok)throw r.status;
+    b.textContent="✅ Publié";m.textContent="Les changements seront visibles dans 1 à 2 minutes.";
+  }).catch(function(er){
+    b.textContent="📤 Publier";
+    m.textContent=(er===401||er===403)?"Jeton refusé ou sans droit d’écriture. Vérifie-le dans ⚙.":(er===404||er===422)?"Dépôt introuvable. Vérifie le pseudo et le nom du dépôt dans ⚙.":"Échec de l’envoi. Vérifie ta connexion internet.";
+  });
+  setTimeout(function(){if(b.textContent==="✅ Publié")b.textContent="📤 Publier";},3000);
 };
 load();render();infoSauv();
 try{if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js");}catch(e){}
